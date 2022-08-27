@@ -1,0 +1,119 @@
+package datastore
+
+import (
+	"context"
+	"errors"
+	"time"
+
+	config "github.com/Vikash123abc/Fampay-Assignment.git/Config"
+	"github.com/Vikash123abc/Fampay-Assignment.git/model"
+	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
+	"gopkg.in/mgo.v2/bson"
+)
+
+const (
+	DatabaseName   = "youtubeapi"
+	CollectionName = "youtubeapi"
+)
+
+/*
+   connects to mongodb and returns the collection
+*/
+func ConnectMongo(config config.Config) (*mongo.Collection, error) {
+	serverAPIOptions := options.ServerAPI(options.ServerAPIVersion1)
+
+	if config.MongoURI == "" {
+		return nil, errors.New("MongoURI empty")
+	}
+
+	clientOptions := options.Client().
+		ApplyURI(config.MongoURI).
+		SetServerAPIOptions(serverAPIOptions)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	client, err := mongo.Connect(ctx, clientOptions)
+
+	collection := client.Database(DatabaseName).Collection(CollectionName)
+	if err != nil {
+		return nil, err
+	}
+
+	return collection, nil
+}
+
+/*
+   bulk upserts list of videos, inserts if video doesn't exist; updates if existing video has any changes in it's fields
+*/
+func BulkUpsertVideos(ctx context.Context, videos []model.Video, mongoCollection *mongo.Collection) error {
+	var operations []mongo.WriteModel
+
+	for _, video := range videos {
+		operation := mongo.NewUpdateOneModel()
+		operation.SetUpsert(true)
+		operation.SetFilter(bson.M{"video_etag": video.VideoETag})
+		operation.SetUpdate(bson.M{"$set": bson.M{"title": video.Title, "description": video.Description, "thumbnail_url": video.ThumbnailUrl, "published_at": video.PublishedAt}})
+
+		operations = append(operations, operation)
+	}
+
+	bulkWrite := options.BulkWriteOptions{}
+	bulkWrite.SetOrdered(true)
+
+	_, err := mongoCollection.BulkWrite(ctx, operations, &bulkWrite)
+	if err != nil {
+		//logger.Errorw("error calling BulkWrite", "error", err)
+		return err
+	}
+	return nil
+}
+
+/*
+   fetches video list from mongodb.
+   supports pagination and search query.
+*/
+func GetVideosList(ctx context.Context, showVideoRequest model.ShowVideoRequest, mongoCollection *mongo.Collection) ([]*model.Video, error) {
+	videoList := make([]*model.Video, 0)
+
+	page := model.Page{}
+	var searchQuery string
+
+	filter := bson.M{}
+
+	// if searchQuery isn't empty, do partial search on title and description
+	if searchQuery != "" {
+		filter = bson.M{"$or": []bson.M{
+			{"title": primitive.Regex{Pattern: searchQuery, Options: "i"}},
+			{"description": primitive.Regex{Pattern: searchQuery, Options: "i"}},
+		},
+		}
+	}
+
+	// sort in descending order of published_at field
+	findOptions := &options.FindOptions{}
+	findOptions.SetSort(bson.M{"published_at": -1})
+
+	// skip documents to reach given page, considering 5 videos per page
+	findOptions.SetSkip(int64((page.Offset - 1) * page.Limit))
+	findOptions.SetLimit(4)
+
+	cursor, err := mongoCollection.Find(ctx, filter, findOptions)
+	if err != nil {
+		return nil, err
+	}
+
+	for cursor.Next(ctx) {
+		video := &model.Video{}
+		err := cursor.Decode(video)
+		if err != nil {
+			return nil, err
+		} else {
+			videoList = append(videoList, video)
+		}
+	}
+
+	return videoList, nil
+}
