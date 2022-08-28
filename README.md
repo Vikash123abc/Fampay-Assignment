@@ -9,11 +9,11 @@
 
 # APIS
 
-1.  Returns list of videos with pagination.
+1.  Returns list of videos with pagination. ( GET Method )
 
     >  http://localhost:2000/?offset=1&limit=3
 
-2.  List of videos with regex matching on searchString with pagination .
+2.  List of videos with regex matching on searchString with pagination . (GET Method)
    > Eg: http://localhost:2000/search?limit=4&offset=2&search=cricket
 
 ### Response Format
@@ -35,6 +35,7 @@
 Update the config file like belowing:
 
 MONGO_URI: 
+
 YOUTUBE_API_KEY: 
 
 
@@ -42,4 +43,4 @@ YOUTUBE_API_KEY:
 
 1. `go run main.go` will start the server locally on port 2000.
    or
-2. `docker build . -t youtubeapi && docker run -p 5001:5001 youtubeapi` will start a docker container on port 5001.
+2. `docker build . -t main && docker run -p 2000:2000 main` will start a docker container on port 2000.
