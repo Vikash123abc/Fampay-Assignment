@@ -62,7 +62,7 @@ func main() {
 
 // Function for calling youtube apis every second for query = cricket
 func getNewVideos(config *config.Config, collection *mongo.Collection) {
-	ticker := time.NewTicker(1200 * time.Second)
+	ticker := time.NewTicker(10 * time.Second)
 	done := make(chan bool)
 	go func() {
 		for {
