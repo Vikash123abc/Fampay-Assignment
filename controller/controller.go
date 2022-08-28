@@ -2,93 +2,84 @@ package controller
 
 import (
 	"errors"
+	"log"
 	"net/http"
 	"strconv"
 
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.uber.org/zap"
 
-	config "github.com/Vikash123abc/Fampay-Assignment.git/Config"
+	"github.com/Vikash123abc/Fampay-Assignment.git/config"
 	"github.com/Vikash123abc/Fampay-Assignment.git/model"
-	ytservice "github.com/Vikash123abc/Fampay-Assignment.git/service"
+	"github.com/Vikash123abc/Fampay-Assignment.git/service"
 	"github.com/gin-gonic/gin"
 )
 
 type YoutubeAPI struct {
-	Logger          *zap.SugaredLogger
 	Config          *config.Config
-	YoutubeService  ytservice.Service
+	YoutubeService  service.Service
 	MongoCollection *mongo.Collection
 }
 
-func NewYouTubeAPI(logger *zap.SugaredLogger, config *config.Config, youtubeService ytservice.Service, mongoCollection *mongo.Collection) *YoutubeAPI {
+func NewYouTubeAPI(logger *zap.SugaredLogger, config *config.Config, youtubeService service.Service, mongoCollection *mongo.Collection) *YoutubeAPI {
 	return &YoutubeAPI{
-		Logger:          logger,
 		Config:          config,
 		YoutubeService:  youtubeService,
 		MongoCollection: mongoCollection,
 	}
 }
 
-/*
-   method: GET
-   params: page
-   description: loads video(s) metadata from db and returns an json array
-
-*/
 func (yt YoutubeAPI) LoadStoredVideos(ctx *gin.Context) (int, interface{}, error) {
-	logger := yt.Logger
 
-	page, err := strconv.Atoi(ctx.Query("page"))
+	limit, err := strconv.Atoi(ctx.Query("limit"))
 	if err != nil {
-		logger.Errorw("error getting page query", "error", err)
-		return http.StatusInternalServerError, gin.H{"success": false, "error": "error getting page"}, err
+		limit = 10
 	}
 
-	showVideoRequest := model.ShowVideoRequest{
-		Page:        int64(page),
-		SearchQuery: "",
+	offset, err := strconv.Atoi(ctx.Query("offset"))
+	if err != nil {
+		offset = 1
 	}
 
-	videos, err := yt.YoutubeService.LoadStoredVideos(ctx, showVideoRequest, yt.MongoCollection)
+	page := model.Page{
+		Offset: offset,
+		Limit:  limit,
+	}
+
+	videos, err := yt.YoutubeService.LoadStoredVideos(ctx, page, "", yt.MongoCollection)
 	if err != nil {
-		logger.Errorw("error getting videos list", "error", err)
+		log.Println("error getting videos list", "error", err)
 		return http.StatusInternalServerError, gin.H{"success": false, "error": "error loading videos"}, err
 	}
 
 	return http.StatusOK, gin.H{"success": true, "videos": videos, "error": ""}, nil
 }
 
-/*
-    method: GET
-    params: page, search
-    description: loads video(s) matching the query metadata from db and returns an json array.
-		 supports partial matching on fields - title and description
-
-*/
 func (yt YoutubeAPI) LoadStoredVideosByQuery(ctx *gin.Context) (int, interface{}, error) {
-	logger := yt.Logger
 
-	page, err := strconv.Atoi(ctx.Query("page"))
+	offset, err := strconv.Atoi(ctx.Query("offset"))
 	if err != nil {
-		logger.Errorw("error getting page query", "error", err)
-		return http.StatusInternalServerError, gin.H{"success": false, "error": "error getting page"}, err
+		offset = 1
+	}
+	limit, err := strconv.Atoi(ctx.Query("limit"))
+	if err != nil {
+		limit = 10
 	}
 
 	searchQuery := ctx.Query("search")
 	if searchQuery == "" {
-		logger.Errorw("search query empty")
+		log.Panicln("search query empty")
 		return http.StatusInternalServerError, gin.H{"success": false, "error": "search query empty"}, errors.New("search query empty")
 	}
 
-	showVideoRequest := model.ShowVideoRequest{
-		Page:        int64(page),
-		SearchQuery: searchQuery,
+	page := model.Page{
+		Offset: offset,
+		Limit:  limit,
 	}
 
-	videos, err := yt.YoutubeService.LoadStoredVideos(ctx, showVideoRequest, yt.MongoCollection)
+	videos, err := yt.YoutubeService.LoadStoredVideos(ctx, page, searchQuery, yt.MongoCollection)
 	if err != nil {
-		logger.Errorw("error getting videos list", "error", err)
+		log.Println("error getting videos list", "error", err)
 		return http.StatusInternalServerError, gin.H{"success": false, "error": "error loading videos"}, err
 	}
 

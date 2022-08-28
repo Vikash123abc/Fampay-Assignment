@@ -1,74 +1,78 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"time"
 
-	config1 "github.com/Vikash123abc/Fampay-Assignment.git/Config"
+	"github.com/Vikash123abc/Fampay-Assignment.git/config"
 	"github.com/Vikash123abc/Fampay-Assignment.git/controller"
 	"github.com/Vikash123abc/Fampay-Assignment.git/datastore"
-	ytservice "github.com/Vikash123abc/Fampay-Assignment.git/service"
+	"github.com/Vikash123abc/Fampay-Assignment.git/service"
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
-func refreshVideoList(config *config1.Config, collection *mongo.Collection) {
-	ticker := time.NewTicker(10 * time.Second)
-	quit := make(chan struct{})
+func main() {
+
+	r := gin.New()
+	log.Println("Backend Service starting...")
+
+	// Intialising Logger
+	config.InitializeLogger()
+
+	// Loading Config values
+	config1, err := config.Load(".")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Connecting to MomgoDB database
+	collection, err := datastore.ConnectMongo(config1)
+	if err != nil {
+		log.Println("Error connecting to Database", err)
+		return
+	} else {
+		log.Println("connected to Database")
+	}
+
+	youtubeService := service.Service{
+		Config: &config1,
+	}
+
+	// creating youtube-api to access APIs
+	youtubeApi := controller.YoutubeAPI{
+		Config:          &config1,
+		MongoCollection: collection,
+		YoutubeService:  youtubeService,
+	}
+
+	// go routine for getting data from video for every 10 secs
+	go getNewVideos(&config1, collection)
+	errorHandler := config.WrapperAPI()
+
+	// APIs
+
+	r.GET("/", errorHandler(youtubeApi.LoadStoredVideos))
+	r.GET("/search", errorHandler(youtubeApi.LoadStoredVideosByQuery))
+
+	// Running the server on port number 2000
+	PORT := ":2000"
+	r.Run(PORT)
+}
+
+// Function for calling youtube apis every second for query = cricket
+func getNewVideos(config *config.Config, collection *mongo.Collection) {
+	ticker := time.NewTicker(1200 * time.Second)
+	done := make(chan bool)
 	go func() {
 		for {
 			select {
 			case <-ticker.C:
-				//logger.Infow("loading video list")
-				ytservice.FetchVideosByQuery(config, "football", collection)
+				service.GetVideosByQuery(config, "cricket", collection)
 
-			case <-quit:
-				ticker.Stop()
+			case <-done:
 				return
 			}
 		}
 	}()
-}
-
-func main() {
-
-	r := gin.New()
-	fmt.Println("Backend Service starting...")
-	config1.InitializeLogger()
-
-	config, err := config1.Load(".")
-	if err != nil {
-		log.Fatal(err)
-	}
-	collection, err := datastore.ConnectMongo(config)
-	if err != nil {
-		fmt.Println("Error connecting to Database", err)
-		return
-	} else {
-		fmt.Println("connected to Database")
-	}
-
-	youtubeService := ytservice.Service{
-		Config: &config,
-	}
-
-	// create youtube-api to access APIs
-	youtubeApi := controller.YoutubeAPI{
-		Config:          &config,
-		MongoCollection: collection,
-		YoutubeService:  youtubeService,
-	}
-	fmt.Println(youtubeApi)
-
-	// go routine to pull videos metadata from youtube
-	go refreshVideoList(&config, collection)
-	errorHandler := config1.ProvideAPIWrap()
-
-	// handler functions
-	r.GET("/", errorHandler(youtubeApi.LoadStoredVideos))
-
-	r.GET("/search", errorHandler(youtubeApi.LoadStoredVideosByQuery))
-	//http.ListenAndServe(":1000", nil)
-	r.Run(":2000")
 }

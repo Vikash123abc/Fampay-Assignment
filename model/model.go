@@ -1,7 +1,7 @@
 package model
 
 type Video struct {
-	Title        string `json:"offset" bson:"title"`
+	Title        string `json:"title" bson:"title"`
 	ChannelId    string `json:"channelId" bson:"channel_id"`
 	ChannelTitle string `json:"channelTitle" bson:"channel_title"`
 	VideoId      string `json:"videoId " bson:"video_id"`
@@ -14,8 +14,4 @@ type Video struct {
 type Page struct {
 	Offset int `json:"offset" bson:"offset"`
 	Limit  int `json:"limit" bson:"limit"`
-}
-type ShowVideoRequest struct {
-	Page        int64  `json:"page"`
-	SearchQuery string `json:"search_query"`
 }

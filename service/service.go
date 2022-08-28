@@ -5,8 +5,9 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"log"
 
-	config "github.com/Vikash123abc/Fampay-Assignment.git/Config"
+	"github.com/Vikash123abc/Fampay-Assignment.git/config"
 	"github.com/Vikash123abc/Fampay-Assignment.git/datastore"
 	"github.com/Vikash123abc/Fampay-Assignment.git/model"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -19,16 +20,12 @@ type Service struct {
 }
 
 var (
-	maxResults      = flag.Int64("max-results", 25, "Max YouTube results")
-	predefinedQuery = "football"
+	maxResults = flag.Int64("max-results", 25, "Max YouTube results")
 )
 
-/*
-   pings youtube for video with search query, uses available API keys.
-   picks the first valid API key.
-*/
-func getMetadataFromYoutube(config *config.Config, query string) (*youtube.SearchListResponse, error) {
+func YoutubeMetaData(config *config.Config, query string) (*youtube.SearchListResponse, error) {
 	keys := config.YoutubeApiKeys
+	fmt.Println("keys", keys)
 	for _, key := range keys {
 		youtubeClient, err := youtube.NewService(context.TODO(), option.WithAPIKey(key))
 		if err != nil {
@@ -39,38 +36,34 @@ func getMetadataFromYoutube(config *config.Config, query string) (*youtube.Searc
 			MaxResults(*maxResults).
 			Order("date").
 			Type("video").
-			PublishedAfter("2020-01-01T00:00:00Z")
+			PublishedAfter("2021-01-01T00:00:00Z")
 
 		response, err := call.Do()
 		if err != nil {
 			continue
 		}
 
-		//logger.Infow("got video metadata from youtube")
 		return response, nil
 	}
 	return nil, errors.New("invalid api key(s)")
 }
 
-/*
-   fetches videos metadata from youtube with the predefinedQuery in descending order of published date and stores it in DB.
-   supports multiple API keys, picks up the first valid key.
-   bulk inserts the video array into DB.
-*/
-
-func FetchVideosByQuery(config *config.Config, query string, mongoCollection *mongo.Collection) error {
-	response, err := getMetadataFromYoutube(config, query)
+func GetVideosByQuery(config *config.Config, query string, mongoCollection *mongo.Collection) error {
+	response, err := YoutubeMetaData(config, query)
 	if err != nil {
-		//logger.Errorw("error getting video metadata from youtube", "error", err)
+		log.Println("error getting video from youtube", err)
 		return err
 	}
 
 	videosList := []model.Video{}
 
-	// Create a list of videos metadata to upsert
+	// Create a list of videos metadata for upserting
 	for _, item := range response.Items {
 		newVideo := model.Video{
 			Title:        item.Snippet.Title,
+			ChannelId:    item.Snippet.ChannelId,
+			VideoId:      item.Id.PlaylistId,
+			ChannelTitle: item.Snippet.ChannelTitle,
 			Description:  item.Snippet.Description,
 			PublishedAt:  item.Snippet.PublishedAt,
 			ThumbnailUrl: item.Snippet.Thumbnails.Default.Url,
@@ -81,19 +74,18 @@ func FetchVideosByQuery(config *config.Config, query string, mongoCollection *mo
 
 	err = datastore.BulkUpsertVideos(context.TODO(), videosList, mongoCollection)
 	if err != nil {
-		//	logger.Errorw("error bulk upserting videos", "error", err)
+		log.Println("error while bulk upserting videos", err)
 		return err
 	}
+
+	// Printing data to the terminal
 	fmt.Println(videosList)
 	return nil
 }
 
-/*
-   service which fetches videos metadata from DB and returns the array.
-   returns results matching the query if query is specified.
-*/
-func (svc Service) LoadStoredVideos(ctx context.Context, showVideoRequest model.ShowVideoRequest, mongoCollection *mongo.Collection) ([]*model.Video, error) {
-	videos, err := datastore.GetVideosList(ctx, showVideoRequest, mongoCollection)
+// Loading the videos from database
+func (svc Service) LoadStoredVideos(ctx context.Context, page model.Page, searchString string, mongoCollection *mongo.Collection) ([]*model.Video, error) {
+	videos, err := datastore.GetVideosList(ctx, page, searchString, mongoCollection)
 	if err != nil {
 		return nil, err
 	}
